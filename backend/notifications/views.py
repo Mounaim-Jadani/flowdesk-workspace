@@ -34,3 +34,13 @@ def mark_notification_read(request, notification_id):
     if not updated:
         return Response({'detail': 'Notification not found.'}, status=status.HTTP_404_NOT_FOUND)
     return Response({'status': 'read'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_all_notifications_read(request):
+    updated = Notification.objects.filter(
+        recipient=request.user,
+        is_read=False,
+    ).update(is_read=True)
+    return Response({'status': 'read', 'updated': updated})

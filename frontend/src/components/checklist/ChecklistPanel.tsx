@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useChecklistStore } from '../../stores/checklistStore';
 import { ActionItemRow } from './ActionItemRow';
 import { checklistApi } from '../../api/checklist';
@@ -12,6 +12,8 @@ interface ChecklistPanelProps {
 
 export function ChecklistPanel({ roomId, participants }: ChecklistPanelProps) {
   const [isCreating, setIsCreating] = useState(false);
+  const [isHighlighted, setIsHighlighted] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [description, setDescription] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
   const [dueAt, setDueAt] = useState('');
@@ -22,6 +24,9 @@ export function ChecklistPanel({ roomId, participants }: ChecklistPanelProps) {
     const consumeIntent = (event: Event) => {
       if ((event as CustomEvent<string>).detail === String(roomId)) {
         sessionStorage.removeItem(key);
+        setIsHighlighted(true);
+        panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        window.setTimeout(() => setIsHighlighted(false), 1600);
       }
     };
     window.addEventListener('flowdesk-open-checklist', consumeIntent);
@@ -55,7 +60,10 @@ export function ChecklistPanel({ roomId, participants }: ChecklistPanelProps) {
   };
 
   return (
-    <div className="w-80 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full shrink-0">
+    <div
+      ref={panelRef}
+      className={`w-80 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full shrink-0 transition-shadow ${isHighlighted ? 'ring-2 ring-inset ring-violet-500' : ''}`}
+    >
       <div className="p-4 border-b border-slate-200 dark:border-slate-800">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Actions</h2>

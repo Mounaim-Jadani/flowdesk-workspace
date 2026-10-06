@@ -16,6 +16,9 @@ export function MessageInput({ roomId, replyTo, onCancelReply }: MessageInputPro
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [scheduleChoiceVisible, setScheduleChoiceVisible] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -25,6 +28,13 @@ export function MessageInput({ roomId, replyTo, onCancelReply }: MessageInputPro
     ? room.participants_info?.find((p) => p.user.id !== currentUser?.id)?.user
     : null;
   const recipientId = otherParticipant?.id;
+  const mentionCandidates = room?.room_type === 'group' && mentionQuery !== null
+    ? (room.participants_info || [])
+      .map((participant) => participant.user)
+      .filter((participant) => participant.id !== currentUser?.id)
+      .filter((participant) => participant.username.toLowerCase().includes(mentionQuery.toLowerCase()))
+      .slice(0, 6)
+    : [];
   const recipientDeepWork = usePresenceStore(s => 
     recipientId ? s.onlineUsers[recipientId]?.deepWork : null
   );
@@ -36,6 +46,43 @@ export function MessageInput({ roomId, replyTo, onCancelReply }: MessageInputPro
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
     }
   }, [message]);
+
+  const updateMentionState = (value: string, cursorPosition: number) => {
+    if (room?.room_type !== 'group') {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+
+    const textBeforeCursor = value.slice(0, cursorPosition);
+    const match = textBeforeCursor.match(/(?:^|\s)@([A-Za-z0-9_.-]*)$/);
+    if (!match) {
+      setMentionQuery(null);
+      setMentionStart(null);
+      return;
+    }
+
+    setMentionQuery(match[1]);
+    setMentionStart(cursorPosition - match[1].length - 1);
+    setMentionIndex(0);
+  };
+
+  const selectMention = (username: string) => {
+    if (mentionStart === null) return;
+
+    const cursorPosition = textareaRef.current?.selectionStart ?? message.length;
+    const nextMessage = `${message.slice(0, mentionStart)}@${username} ${message.slice(cursorPosition)}`;
+    const nextCursorPosition = mentionStart + username.length + 2;
+    setMessage(nextMessage);
+    setMentionQuery(null);
+    setMentionStart(null);
+    setMentionIndex(0);
+
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
 
   // Handle typing indicator
   const handleTyping = useCallback(() => {
@@ -102,6 +149,30 @@ export function MessageInput({ roomId, replyTo, onCancelReply }: MessageInputPro
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((index) => (index + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((index) => (index - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        selectMention(mentionCandidates[mentionIndex].username);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionQuery(null);
+        setMentionStart(null);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -157,14 +228,45 @@ export function MessageInput({ roomId, replyTo, onCancelReply }: MessageInputPro
         </button>
 
         {/* Input Area */}
-        <div className="flex-1 relative">
-          <textarea
+         <div className="flex-1 relative">
+           {mentionCandidates.length > 0 && (
+             <div className="absolute bottom-full left-0 z-30 mb-2 w-64 overflow-hidden rounded-lg border border-gray-600 bg-gray-800 shadow-xl">
+               <p className="border-b border-gray-700 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                 Mentionner un membre
+               </p>
+               {mentionCandidates.map((participant, index) => (
+                 <button
+                   key={participant.id}
+                   type="button"
+                   onMouseDown={(event) => event.preventDefault()}
+                   onClick={() => selectMention(participant.username)}
+                   className={clsx(
+                     'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-200 transition-colors',
+                     index === mentionIndex ? 'bg-primary-600 text-white' : 'hover:bg-gray-700',
+                   )}
+                 >
+                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary-500/30 text-xs font-semibold">
+                     {participant.username.charAt(0).toUpperCase()}
+                   </span>
+                   <span>
+                     <span className="font-medium">@{participant.username}</span>
+                     {participant.display_name && participant.display_name !== participant.username && (
+                       <span className="ml-2 text-xs text-gray-400">{participant.display_name}</span>
+                     )}
+                   </span>
+                 </button>
+               ))}
+             </div>
+           )}
+           <textarea
             ref={textareaRef}
-            value={message}
-            onChange={(e) => {
-              setMessage(e.target.value);
-              handleTyping();
-            }}
+             value={message}
+             onChange={(e) => {
+               const nextMessage = e.target.value;
+               setMessage(nextMessage);
+               updateMentionState(nextMessage, e.target.selectionStart ?? nextMessage.length);
+               handleTyping();
+             }}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}

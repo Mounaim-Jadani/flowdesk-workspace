@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Clock, Loader2, Sparkles, X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { useChatStore } from '../../stores/chatStore';
 import { useDigestStore } from '../../stores/digestStore';
 import { ChatRoom, DigestData } from '../../types';
 import { scrollToMessage } from '../../utils/messageNavigation';
@@ -50,8 +51,9 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
   const roomId = room.id;
   const digest = useDigestStore((state) => state.digestByRoom[roomId]);
   const isLoading = useDigestStore((state) => state.loadingRooms[roomId] === true);
+  const error = useDigestStore((state) => state.errorByRoom[roomId]);
   const isOpen = useDigestStore((state) => state.openRooms.includes(roomId));
-  const consume = useDigestStore((state) => state.consume);
+  const consumeDigest = useChatStore((state) => state.consumeDigest);
   const dismiss = useDigestStore((state) => state.dismiss);
   const regenerate = useDigestStore((state) => state.regenerate);
   const currentUserId = useAuthStore((state) => state.user?.id);
@@ -59,6 +61,7 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
   const [selectedLanguage, setSelectedLanguage] = useState(
     () => window.localStorage.getItem('flowdesk-digest-language') || '',
   );
+  const [isConsuming, setIsConsuming] = useState(false);
 
   useEffect(() => {
     setIsExpanded(false);
@@ -71,7 +74,7 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
     [room, currentUserId],
   );
 
-  if (!isOpen || (!digest && !isLoading)) {
+  if (!isOpen || (!digest && !isLoading && !error)) {
     return null;
   }
 
@@ -86,11 +89,29 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
     : [
         `${stats.messageCount} message${stats.messageCount > 1 ? 's' : ''}`,
         ...(stats.decisions > 0 ? [`${stats.decisions} décision${stats.decisions > 1 ? 's' : ''}`] : []),
-        ...(stats.openItems > 0 ? [`${stats.openItems} action${stats.openItems > 1 ? 's' : ''} ouverte${stats.openItems > 1 ? 's' : ''}`] : []),
       ];
 
   const scrollToDigestMessage = (messageId: string) => {
     scrollToMessage(messageId);
+  };
+
+  const handleConsume = async () => {
+    setIsConsuming(true);
+    try {
+      await consumeDigest(roomId);
+    } catch {
+      // The store keeps the banner visible and exposes the retry message.
+    } finally {
+      setIsConsuming(false);
+    }
+  };
+
+  const handleOpenActions = () => {
+    const key = `flowdesk-open-checklist-${roomId}`;
+    sessionStorage.setItem(key, 'true');
+    window.dispatchEvent(new CustomEvent('flowdesk-open-checklist', {
+      detail: String(roomId),
+    }));
   };
 
   return (
@@ -115,6 +136,18 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
                 {digest && (
                   <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                     {summaryParts.join(' · ')}
+                    {stats.openItems > 0 && (
+                      <>
+                        {' · '}
+                        <button
+                          type="button"
+                          onClick={handleOpenActions}
+                          className="font-medium text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-900 dark:text-violet-300 dark:decoration-violet-700 dark:hover:text-violet-100"
+                        >
+                          {stats.openItems} action{stats.openItems > 1 ? 's' : ''} pour vous
+                        </button>
+                      </>
+                    )}
                   </p>
                 )}
               </div>
@@ -125,7 +158,7 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
                 <button
                   type="button"
                   onClick={() => setIsExpanded((expanded) => !expanded)}
-                  disabled={isLoading && !digest}
+                  disabled={isLoading || isConsuming}
                   className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isExpanded ? 'Réduire' : 'Voir le rattrapage'}
@@ -144,6 +177,20 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
             </div>
           </div>
 
+          {error && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/60 dark:text-rose-200">
+              <span>{error}</span>
+              <button
+                type="button"
+                onClick={() => regenerate(roomId, selectedLanguage)}
+                disabled={isLoading || isConsuming}
+                className="rounded-md bg-rose-600 px-3 py-1.5 font-medium text-white transition-colors hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Réessayer
+              </button>
+            </div>
+          )}
+
           {isExpanded && digest && (
             <div className="mt-4 space-y-4 border-t border-sky-200/70 pt-4 dark:border-sky-800/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -154,7 +201,15 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
                   </span>
                   {!isDirectMessage && <span>{stats.participants} participant{stats.participants > 1 ? 's' : ''}</span>}
                   {!isDirectMessage && stats.decisions > 0 && <span>{stats.decisions} décision{stats.decisions > 1 ? 's' : ''}</span>}
-                  {stats.openItems > 0 && <span>{stats.openItems} action{stats.openItems > 1 ? 's' : ''} ouverte{stats.openItems > 1 ? 's' : ''}</span>}
+                   {stats.openItems > 0 && (
+                     <button
+                       type="button"
+                       onClick={handleOpenActions}
+                       className="font-medium text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-900 dark:text-violet-300 dark:decoration-violet-700 dark:hover:text-violet-100"
+                     >
+                       {stats.openItems} action{stats.openItems > 1 ? 's' : ''} pour vous
+                     </button>
+                   )}
                 </div>
                 <label className="inline-flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                   <span>Résumé en</span>
@@ -243,15 +298,16 @@ export function CatchUpBanner({ room }: CatchUpBannerProps) {
               <div className="flex flex-wrap items-center justify-end gap-2 border-t border-sky-200/70 pt-3 dark:border-sky-800/70">
                 <button
                   type="button"
-                  onClick={() => setIsExpanded(false)}
+                  onClick={() => dismiss(roomId)}
                   className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white/70 dark:text-slate-300 dark:hover:bg-slate-900/60"
                 >
                   Fermer
                 </button>
                 <button
                   type="button"
-                  onClick={() => consume(roomId)}
-                  className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950"
+                  onClick={handleConsume}
+                  disabled={isConsuming || isLoading}
+                  className="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-slate-950"
                 >
                   <Check className="mr-1.5 h-3.5 w-3.5" />
                   Lu, c’est à jour

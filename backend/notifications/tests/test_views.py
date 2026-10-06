@@ -4,7 +4,11 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from chat.models import ChatRoom, RoomParticipant
 from notifications.models import Notification
-from notifications.views import list_notifications, mark_notification_read
+from notifications.views import (
+    list_notifications,
+    mark_all_notifications_read,
+    mark_notification_read,
+)
 
 
 class NotificationViewTests(TestCase):
@@ -35,3 +39,32 @@ class NotificationViewTests(TestCase):
         self.assertEqual(read_response.status_code, 200)
         item.refresh_from_db()
         self.assertTrue(item.is_read)
+
+    def test_all_notifications_are_marked_read_only_for_current_user(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(
+            email='other-notification@example.com',
+            username='other-notification-user',
+            password='test-password',
+        )
+        own_item = Notification.objects.create(
+            recipient=self.user,
+            room=self.room,
+            kind='assignment',
+            payload={'room_id': str(self.room.id)},
+        )
+        other_item = Notification.objects.create(
+            recipient=other_user,
+            room=self.room,
+            kind='assignment',
+            payload={'room_id': str(self.room.id)},
+        )
+
+        response = mark_all_notifications_read(self.request('post', '/api/notifications/read-all/'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['updated'], 1)
+        own_item.refresh_from_db()
+        other_item.refresh_from_db()
+        self.assertTrue(own_item.is_read)
+        self.assertFalse(other_item.is_read)

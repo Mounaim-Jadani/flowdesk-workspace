@@ -15,6 +15,7 @@ interface NotificationsState {
   push: (item: NotificationItem) => void;
   load: () => Promise<void>;
   markRead: (id: string) => void;
+  markAllRead: () => Promise<void>;
   clearMessageNotifications: (roomId: string) => void;
 }
 
@@ -50,6 +51,13 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
       unreadCount: newItems.filter(item => !item.is_read).length
     };
     });
+  },
+  markAllRead: async () => {
+    await apiClient.post('/notifications/read-all/');
+    set((state) => ({
+      items: state.items.map((item) => ({ ...item, is_read: true })),
+      unreadCount: 0,
+    }));
   },
   clearMessageNotifications: (roomId) => set((state) => {
     const newItems = state.items.filter((item) => !(

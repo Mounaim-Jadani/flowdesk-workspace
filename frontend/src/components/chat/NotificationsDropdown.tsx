@@ -9,12 +9,24 @@ export function NotificationsDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { items, unreadCount, markRead, clearMessageNotifications } = useNotificationsStore();
+  const { items, unreadCount, markRead, markAllRead, clearMessageNotifications } = useNotificationsStore();
   const deferredQueue = usePresenceStore((state) => state.deferredQueue);
   const mySession = usePresenceStore((state) => state.mySession);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
 
   // Le nombre total de notifications (standard + différées si en Deep Work)
   const totalUnread = unreadCount + (mySession?.active ? deferredQueue.length : 0);
+
+  const handleMarkAllRead = async () => {
+    setIsMarkingAllRead(true);
+    try {
+      await markAllRead();
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    } finally {
+      setIsMarkingAllRead(false);
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -45,6 +57,16 @@ export function NotificationsDropdown() {
         <div className="absolute top-full left-0 mt-2 w-80 rounded-xl bg-gray-800 border border-gray-700 shadow-2xl overflow-hidden z-50 flex flex-col max-h-[24rem]">
           <div className="px-4 py-3 border-b border-gray-700 flex justify-between items-center bg-gray-800/95 backdrop-blur-sm sticky top-0">
             <h3 className="font-semibold text-white">Notifications</h3>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={() => void handleMarkAllRead()}
+                disabled={isMarkingAllRead}
+                className="text-xs text-primary-400 hover:text-primary-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isMarkingAllRead ? '...' : 'Tout marquer comme lu'}
+              </button>
+            )}
           </div>
 
           <div className="overflow-y-auto flex-1 p-2 space-y-1">

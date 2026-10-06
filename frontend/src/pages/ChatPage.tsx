@@ -4,6 +4,7 @@ import { useChatStore } from '../stores/chatStore';
 import { wsService } from '../services/websocket';
 import { authApi } from '../api/auth';
 import { usePresenceStore } from '../stores/presenceStore';
+import { useNotificationsStore } from '../stores/notificationsStore';
 import { Sidebar } from '../components/chat/Sidebar';
 import { ChatWindow } from '../components/chat/ChatWindow';
 import { EmptyState } from '../components/chat/EmptyState';
@@ -13,6 +14,7 @@ export function ChatPage() {
   const navigate = useNavigate();
   const { activeRoom, setActiveRoom, fetchRooms, rooms, fetchMessages } = useChatStore();
   const setUserPresence = usePresenceStore((state) => state.setUserPresence);
+  const clearMessageNotifications = useNotificationsStore((state) => state.clearMessageNotifications);
 
   // Fetch rooms on mount
   useEffect(() => {
@@ -56,6 +58,14 @@ export function ChatPage() {
       }
     };
   }, [roomId, fetchMessages]);
+
+  // Clear message alerts whenever the route changes, even if the room state
+  // was already active and ChatPage does not need to replace activeRoom.
+  useEffect(() => {
+    if (roomId) {
+      clearMessageNotifications(roomId);
+    }
+  }, [roomId, clearMessageNotifications]);
 
   // Handle active room state update
   useEffect(() => {

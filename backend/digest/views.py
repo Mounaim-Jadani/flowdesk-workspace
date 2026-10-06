@@ -7,10 +7,19 @@ from django.utils import timezone
 from datetime import timedelta
 import django.utils.dateparse
 from chat.models import ChatRoom, Message
+from checklist.models import ActionItem
 from digest.models import RoomDigest
 from digest.generator import build_digest, SUMMARY_PROMPT_VERSION
 from django.shortcuts import get_object_or_404
 from django.db.models.functions import Coalesce
+
+
+def _open_items_count(room, user):
+    return ActionItem.objects.filter(
+        room=room,
+        assignee=user,
+        status='open',
+    ).count()
 
 class DigestRoomView(APIView):
     permission_classes = [IsAuthenticated]
@@ -39,6 +48,8 @@ class DigestRoomView(APIView):
             )
         )
         if recent_digest and not force and digest_is_current and cached_prompt_version == SUMMARY_PROMPT_VERSION and cached_model not in {None, 'local-heuristic'} and (not lang_pref or cached_language == lang_pref):
+            cached_stats = dict(recent_digest.stats or {})
+            cached_stats['open_items'] = _open_items_count(room, request.user)
             return Response({
                 'id': recent_digest.id,
                 'since': recent_digest.since,
@@ -46,7 +57,7 @@ class DigestRoomView(APIView):
                 'summary': recent_digest.summary,
                 'key_points': recent_digest.key_points,
                 'mentions': recent_digest.mentions,
-                'stats': recent_digest.stats,
+                'stats': cached_stats,
                 'summary_language': (recent_digest.stats or {}).get('summary_language'),
             })
             
@@ -56,7 +67,7 @@ class DigestRoomView(APIView):
             unread_count = room.get_unread_count(request.user)
             min_unread = getattr(settings, 'DIGEST_MIN_UNREAD', 8)
             if unread_count < min_unread:
-                return Response({'detail': f'Not enough unread messages ({unread_count}/{min_unread})'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(status=status.HTTP_204_NO_CONTENT)
                 
             since_param = request.query_params.get('since')
             if since_param:
@@ -95,10 +106,7 @@ class DigestRoomView(APIView):
             use_ai=True,
             chat_type=room.room_type,
         )
-        from checklist.models import ActionItem
-        digest_data.setdefault('stats', {})['open_items'] = ActionItem.objects.filter(
-            room=room, status='open'
-        ).count()
+        digest_data.setdefault('stats', {})['open_items'] = _open_items_count(room, request.user)
         
         room_digest, created = RoomDigest.objects.update_or_create(
             room=room,

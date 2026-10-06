@@ -26,6 +26,7 @@ interface ChatState {
   // Room actions
   fetchRooms: () => Promise<void>;
   setActiveRoom: (room: ChatRoom | null) => void;
+  consumeDigest: (roomId: string) => Promise<void>;
   createDirectMessage: (userId: number) => Promise<ChatRoom>;
   updateRoom: (room: ChatRoom) => void;
 
@@ -77,47 +78,78 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const unreadCount = room?.unread_count || 0;
 
     if (room && unreadCount >= 8) {
-      // Afficher le bandeau IMMÉDIATEMENT avec spinner
+      // Afficher le bandeau immédiatement avec spinner.
       useDigestStore.getState().setLoading(room.id, true);
+    }
 
-      // Debounce the request so rapidly switching rooms does not create
-      // unnecessary digest generations.
+    if (room) {
+      // Fetch also when the visible unread counter is already zero: an
+      // unconsumed digest must reappear after the banner was dismissed.
       digestFetchTimeout = setTimeout(() => {
         digestFetchTimeout = null;
-          const language = window.localStorage.getItem('flowdesk-digest-language') || '';
-          const languageQuery = language ? `?lang_pref=${encodeURIComponent(language)}` : '';
-          apiClient.get(`/digest/rooms/${room.id}/${languageQuery}`)
-          .then(res => {
+        const language = window.localStorage.getItem('flowdesk-digest-language') || '';
+        const languageQuery = language ? `?lang_pref=${encodeURIComponent(language)}` : '';
+        apiClient.get(`/digest/rooms/${room.id}/${languageQuery}`)
+          .then((res) => {
+            if (res.status === 204 || !res.data) {
+              useDigestStore.getState().setDigest(room.id, null);
+              return;
+            }
             useDigestStore.getState().setDigest(room.id, res.data);
+            if (unreadCount >= 8) {
+              // Keep the backend read cursor behind the digest generation so
+              // the API can still build the first digest from unread messages.
+              chatApi.markAsRead(room.id).catch(() => {});
+            }
           })
-          .catch(err => {
+          .catch((err) => {
             console.error('Failed to fetch digest:', err);
-            useDigestStore.getState().setDigest(room.id, null);
-          })
-          .finally(() => {
-            chatApi.markAsRead(room.id).catch(() => {});
+            useDigestStore.getState().setError(
+              room.id,
+              'Impossible de générer le rattrapage. Vérifiez votre connexion puis réessayez.',
+            );
           });
       }, 500);
     }
 
     set((state) => {
-      const needsRoomsUpdate = room && state.rooms.some(r => r.id === room.id && (r.unread_count || 0) > 0);
       return {
-        activeRoom: room,
-        rooms: needsRoomsUpdate
-          ? state.rooms.map(r => (r.id === room!.id) ? { ...r, unread_count: 0 } : r)
-          : state.rooms
+        activeRoom: room ? { ...room, unread_count: 0 } : null,
+        rooms: room
+          ? state.rooms.map((r) => (r.id === room.id ? { ...r, unread_count: 0 } : r))
+          : state.rooms,
       };
     });
 
     if (room) {
       // Opening a room means its message notifications have been read.
       useNotificationsStore.getState().clearMessageNotifications(String(room.id));
-      if (unreadCount >= 8) {
-        // Le markAsRead est géré après la récupération du digest pour éviter la race condition backend
-      } else {
+      if (unreadCount < 8) {
         chatApi.markAsRead(room.id).catch(() => {});
       }
+    }
+  },
+
+  consumeDigest: async (roomId: string) => {
+    try {
+      await chatApi.markAsRead(roomId);
+      await apiClient.post(`/digest/rooms/${roomId}/consume/`);
+      useDigestStore.getState().completeConsume(roomId);
+      set((state) => ({
+        rooms: state.rooms.map((room) => (
+          room.id === roomId ? { ...room, unread_count: 0 } : room
+        )),
+        activeRoom: state.activeRoom?.id === roomId
+          ? { ...state.activeRoom, unread_count: 0 }
+          : state.activeRoom,
+      }));
+    } catch (error) {
+      console.error('Failed to consume digest:', error);
+      useDigestStore.getState().setError(
+        roomId,
+        'Impossible de finaliser le rattrapage. Réessayez.',
+      );
+      throw error;
     }
   },
 
