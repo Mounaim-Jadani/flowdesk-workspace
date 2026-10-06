@@ -1,0 +1,37 @@
+# Django Core
+Django==5.0.1
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+
+# Django Channels (WebSockets)
+channels==4.0.0
+channels-redis==4.2.0
+daphne==4.1.0
+
+# Authentication
+djangorestframework-simplejwt==5.3.1
+PyJWT==2.8.0
+
+# Database
+psycopg2-binary==2.9.9
+redis==5.0.1
+
+# Security & Utils
+python-decouple==3.8
+django-environ==0.11.2
+python-dotenv==1.0.1
+Pillow==10.2.0
+argon2-cffi==23.1.0
+# AI
+google-genai==0.5.0
+
+# Production
+gunicorn==21.2.0
+whitenoise==6.6.0
+
+# Development
+pytest==7.4.4
+pytest-django==4.7.0
+pytest-asyncio==0.23.3
+black==24.1.1
+flake8==7.0.0

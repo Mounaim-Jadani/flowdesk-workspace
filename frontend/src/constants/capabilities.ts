@@ -1,0 +1,12 @@
+export const CAP_CHECKLIST = "checklist";
+export const CAP_CATCH_ME_UP = "catch_me_up";
+export const CAP_DECISIONS = "decisions";
+export const CAP_DEEP_WORK = "deep_work";
+export const CAP_TRANSLATION = "translation";
+export const CAP_KARMA = "karma";
+export const CAP_NOTIFICATION_ROUTING = "notification_routing";
+export const CAP_PULSE = "pulse_survey";
+export const CAP_ONE_ON_ONE_SYNC = "one_on_one_sync";
+export const CAP_STRUCTURED = "structured_fields";
+export const CAP_COMMANDS = "commands";
+export const CAP_WELLBEING = "wellbeing";
