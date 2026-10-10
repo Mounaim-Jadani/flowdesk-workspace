@@ -21,6 +21,7 @@ def check_room_permission(user, room_id):
 def create_item(request):
     try:
         data = request.data
+
         room_id = data.get('room_id')
         description = data.get('description')
         
@@ -51,7 +52,7 @@ def create_item(request):
         item.save()
         
         serialized = serialize_item(item)
-        
+
         # Broadcast via channel_layer
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -116,6 +117,17 @@ def patch_item(request, item_id):
             return JsonResponse({'error': 'Forbidden'}, status=403)
             
         data = request.data
+
+        if 'reassign_to' in data:
+            if item.room.room_type != 'group':
+                return JsonResponse({'error': 'Action transfer is available in groups only.'}, status=400)
+            new_assignee_id = data.get('reassign_to') or None
+            if not new_assignee_id or not RoomParticipant.objects.filter(room_id=item.room_id, user_id=new_assignee_id).exists():
+                return JsonResponse({'error': 'New assignee must be a member of the room.'}, status=400)
+            if int(new_assignee_id) == request.user.id:
+                return JsonResponse({'error': 'Choose another member.'}, status=400)
+            item.reassigned_from = item.assignee or item.created_by
+            item.assignee_id = new_assignee_id
         
         if 'description' in data:
             item.description = data['description']
@@ -123,6 +135,21 @@ def patch_item(request, item_id):
             item.due_at = data['due_at']
             
         item.save()
+
+        if 'reassign_to' in data and item.assignee_id:
+            notify(
+                recipient_id=item.assignee_id,
+                kind='assignment',
+                room=item.room,
+                payload={
+                    'item_id': str(item.id),
+                    'description': item.description,
+                    'actor_username': request.user.username,
+                    'room_id': str(item.room_id),
+                    'reassigned': True,
+                },
+                respect_deep_work=True,
+            )
         
         serialized = serialize_item(item)
         
@@ -156,9 +183,15 @@ def mark_item_done(request, item_id):
         if request.user != item.created_by and request.user != item.assignee:
             return JsonResponse({'error': 'Forbidden'}, status=403)
             
+        if item.status == 'done':
+            return JsonResponse(serialize_item(item))
+
         item.status = 'done'
         item.completed_at = timezone.now()
         item.save()
+
+        from .karma import award_completed_item
+        award_completed_item(item.id)
         
         serialized = serialize_item(item)
         

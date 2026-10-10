@@ -8,7 +8,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
 
-from .models import ChatRoom, RoomParticipant, Message
+from .constants import SUPPORTED_REACTION_EMOJIS
+from .models import ChatRoom, RoomParticipant, Message, Reaction
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 from .serializers import (
     ChatRoomSerializer,
     ChatRoomCreateSerializer,
@@ -241,3 +244,49 @@ class TypingStatusView(APIView):
             is_typing = request.data.get('is_typing', False)
             participant.set_typing(is_typing)
         return Response({'is_typing': is_typing})
+
+
+class MessageReactionView(APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request, room_id, message_id):
+        room = get_object_or_404(ChatRoom.objects.filter(participants=request.user), id=room_id)
+        message = get_object_or_404(Message, id=message_id, room=room)
+        emoji = str(request.data.get('emoji', '👍')).strip()
+        if emoji not in SUPPORTED_REACTION_EMOJIS:
+            return Response({'error': 'Unsupported reaction.'}, status=status.HTTP_400_BAD_REQUEST)
+        reaction, created = Reaction.objects.get_or_create(message=message, user=request.user, emoji=emoji)
+        if created:
+            async_to_sync(get_channel_layer().group_send)(
+                f'chat_{room.id}',
+                {'type': 'reaction_event', 'payload': {
+                    'kind': 'reaction_added', 'message_id': str(message.id),
+                    'user_id': request.user.id, 'username': request.user.username,
+                    'emoji': emoji,
+                }},
+            )
+            if emoji == '👍' and room.room_type == 'group' and message.sender_id != request.user.id:
+                from karma.signals_bus import emit_karma
+                emit_karma(
+                    'clarification_upvoted',
+                    user_id=message.sender_id,
+                    room_id=str(room.id),
+                    metadata={'room_type': 'group', 'message_id': str(message.id), 'reactor_id': request.user.id},
+                    source_key=f'clarification_upvoted:{message.id}:{request.user.id}',
+                )
+        return Response({'emoji': emoji, 'created': created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+    def delete(self, request, room_id, message_id):
+        room = get_object_or_404(ChatRoom.objects.filter(participants=request.user), id=room_id)
+        message = get_object_or_404(Message, id=message_id, room=room)
+        emoji = str(request.data.get('emoji', '👍')).strip()
+        deleted, _ = Reaction.objects.filter(message=message, user=request.user, emoji=emoji).delete()
+        if deleted:
+            async_to_sync(get_channel_layer().group_send)(
+                f'chat_{room.id}',
+                {'type': 'reaction_event', 'payload': {
+                    'kind': 'reaction_removed', 'message_id': str(message.id),
+                    'user_id': request.user.id, 'username': request.user.username, 'emoji': emoji,
+                }},
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

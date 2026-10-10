@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { ChatRoom } from '../../types';
+import { useEffect, useState } from 'react';
+import { ChatRoom, Message } from '../../types';
 import { useChatStore } from '../../stores/chatStore';
 import { useAuthStore } from '../../stores/authStore';
 import { ChatHeader } from './ChatHeader';
@@ -13,6 +13,7 @@ import { ChecklistStrip } from '../checklist/ChecklistStrip';
 import { checklistApi } from '../../api/checklist';
 import { useChecklistStore } from '../../stores/checklistStore';
 import { CatchUpBanner } from './CatchUpBanner';
+import { KarmaPanel } from '../karma/KarmaPanel';
 
 interface ChatWindowProps {
   room: ChatRoom;
@@ -22,6 +23,7 @@ export function ChatWindow({ room }: ChatWindowProps) {
   const { messages, typingUsers } = useChatStore();
   const user = useAuthStore((state) => state.user);
   const roomMessages = messages[room.id] || [];
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const roomTypingUsers = typingUsers[room.id] || [];
 
   const storeHasChecklist = useRoomCapability(String(room.id), 'checklist');
@@ -65,17 +67,26 @@ export function ChatWindow({ room }: ChatWindowProps) {
         <ChatHeader room={room} />
         {hasCatchUp && <CatchUpBanner room={room} />}
         
-        {hasChecklist && isDM && <ChecklistStrip roomId={room.id} />}
+         {hasChecklist && isDM && <ChecklistStrip roomId={room.id} />}
+         <KarmaPanel roomId={String(room.id)} isGroup={!isDM} />
 
         <div className="flex-1 flex flex-col overflow-hidden">
-          <MessageList messages={roomMessages} />
+          <MessageList messages={roomMessages} roomId={String(room.id)} onReply={setReplyTo} />
 
           {othersTyping.length > 0 && (
             <TypingIndicator users={othersTyping} />
           )}
         </div>
 
-        <MessageInput roomId={room.id} />
+        <MessageInput
+          roomId={room.id}
+          replyTo={replyTo ? {
+            id: replyTo.id,
+            content: replyTo.content,
+            sender: replyTo.sender?.display_name || replyTo.sender?.username || 'Utilisateur',
+          } : null}
+          onCancelReply={() => setReplyTo(null)}
+        />
       </div>
 
        {hasChecklist && !isDM && <ChecklistPanel roomId={room.id} participants={room.participants_info || []} />}

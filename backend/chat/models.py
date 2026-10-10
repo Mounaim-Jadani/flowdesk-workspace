@@ -220,3 +220,18 @@ class MessageRead(models.Model):
 
     def __str__(self):
         return f"{self.user.username} read {self.message.id}"
+
+
+class Reaction(models.Model):
+    """A single emoji reaction per user and message."""
+
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reactions')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='message_reactions')
+    emoji = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['message', 'user', 'emoji'], name='unique_message_user_emoji'),
+        ]
+        indexes = [models.Index(fields=['message', 'emoji'])]

@@ -232,6 +232,18 @@ class WebSocketService {
       case 'read':
         // Could update read receipts
         break;
+
+      case 'reaction':
+        if (data.payload && this.roomId) {
+          chatStore.updateMessageReactions(
+            this.roomId,
+            data.payload.message_id,
+            data.payload.user_id,
+            data.payload.emoji,
+            data.payload.kind === 'reaction_added',
+          );
+        }
+        break;
     }
 
     // Notify external handlers

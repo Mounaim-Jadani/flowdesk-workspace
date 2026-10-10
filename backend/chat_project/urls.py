@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/presence/', include('presence.urls')),
     path('api/checklist/', include('checklist.urls')),
     path('api/digest/', include('digest.urls')),
+    path('api/karma/', include('karma.urls')),
     path('api/notifications/', include('notifications.urls')),
 ]
 

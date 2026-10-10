@@ -10,6 +10,7 @@ from .views import (
     DirectMessageView,
     MarkAsReadView,
     TypingStatusView,
+    MessageReactionView,
 )
 
 urlpatterns = [
@@ -25,4 +26,5 @@ urlpatterns = [
     path('direct/', DirectMessageView.as_view(), name='direct_message'),
     path('rooms/<uuid:room_id>/read/', MarkAsReadView.as_view(), name='mark_as_read'),
     path('rooms/<uuid:room_id>/typing/', TypingStatusView.as_view(), name='typing_status'),
+    path('rooms/<uuid:room_id>/messages/<uuid:message_id>/reactions/', MessageReactionView.as_view(), name='message_reactions'),
 ]

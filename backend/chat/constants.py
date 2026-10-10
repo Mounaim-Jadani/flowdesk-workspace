@@ -12,6 +12,9 @@ CAP_STRUCTURED = "structured_fields"
 CAP_COMMANDS = "commands"
 CAP_WELLBEING = "wellbeing"
 
+# Reactions supported by both REST and WebSocket chat clients.
+SUPPORTED_REACTION_EMOJIS = ('👍', '❤️', '😂', '😮', '😢', '🙏')
+
 GROUP_CAPABILITIES = [CAP_CHECKLIST, CAP_CATCH_ME_UP, CAP_DECISIONS, CAP_DEEP_WORK,
                       CAP_TRANSLATION, CAP_KARMA, CAP_NOTIFICATION_ROUTING, CAP_PULSE,
                       CAP_COMMANDS, CAP_WELLBEING]

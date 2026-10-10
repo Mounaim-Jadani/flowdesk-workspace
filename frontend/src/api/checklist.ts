@@ -16,4 +16,8 @@ export const checklistApi = {
     const response = await apiClient.post('/checklist/items/', payload);
     return response.data;
   },
+  reassignItem: async (itemId: string, assigneeId: number): Promise<ActionItem> => {
+    const response = await apiClient.patch(`/checklist/items/${itemId}/`, { reassign_to: assigneeId });
+    return response.data;
+  },
 };

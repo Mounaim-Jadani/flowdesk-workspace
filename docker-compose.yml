@@ -90,7 +90,7 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       REDIS_HOST: redis
-    command: sh -c "while true; do python manage.py expire_deep_work && python manage.py deliver_scheduled_messages; sleep 5; done"
+    command: sh -c "while true; do python manage.py expire_deep_work && python manage.py deliver_scheduled_messages && python manage.py flush_pending_karma; sleep 5; done"
     healthcheck:
       disable: true
     depends_on:

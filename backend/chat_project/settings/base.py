@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'presence',
     'checklist',
     'digest',
+    'karma',
 ]
 
 MIDDLEWARE = [

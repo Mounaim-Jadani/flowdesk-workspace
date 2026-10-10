@@ -65,6 +65,7 @@ export interface Message {
   created_at: string;
   visible_from?: string | null;
   is_own_message?: boolean;
+  reactions?: Array<{ emoji: string; count: number; reacted: boolean }>;
 }
 
 export interface RoomParticipant {
@@ -136,7 +137,7 @@ export interface DigestData {
 
 // WebSocket message types
 export interface WSMessage {
-  type: 'message' | 'typing' | 'read' | 'edit' | 'delete' | 'user_join' | 'user_leave' | 'status';
+  type: 'message' | 'typing' | 'read' | 'edit' | 'delete' | 'user_join' | 'user_leave' | 'status' | 'reaction';
   message?: Message;
   user_id?: number;
   username?: string;
@@ -144,6 +145,13 @@ export interface WSMessage {
   is_online?: boolean;
   message_id?: string;
   read_at?: string;
+  payload?: { kind: string; message_id: string; user_id: number; emoji: string };
+  kind?: string;
+  delta?: number;
+  new_total?: number;
+  monthly_total?: number;
+  event_kind?: string;
+  badges_unlocked?: string[];
 }
 
 // API Response types

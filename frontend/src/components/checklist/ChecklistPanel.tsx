@@ -129,8 +129,8 @@ export function ChecklistPanel({ roomId, participants }: ChecklistPanelProps) {
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {items.map(item => (
-              <ActionItemRow key={item.id} roomId={roomId} item={item} />
+             {items.map(item => (
+               <ActionItemRow key={item.id} roomId={roomId} item={item} participants={participants} />
             ))}
           </div>
         )}

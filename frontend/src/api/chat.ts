@@ -70,4 +70,12 @@ export const chatApi = {
   updateTypingStatus: async (roomId: string, isTyping: boolean): Promise<void> => {
     await apiClient.post(`/chat/rooms/${roomId}/typing/`, { is_typing: isTyping });
   },
+  addReaction: async (roomId: string, messageId: string, emoji = '👍'): Promise<void> => {
+    await apiClient.post(`/chat/rooms/${roomId}/messages/${messageId}/reactions/`, { emoji });
+  },
+  removeReaction: async (roomId: string, messageId: string, emoji = '👍'): Promise<void> => {
+    await apiClient.delete(`/chat/rooms/${roomId}/messages/${messageId}/reactions/`, {
+      data: { emoji },
+    });
+  },
 };

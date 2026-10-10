@@ -10,6 +10,7 @@ export interface ActionItem {
   assignee: { id: number; username: string } | null;
   created_by: { id: number; username: string };
   source_message_id: string | null;
+  reassigned_from?: { id: number; username: string } | null;
 }
 
 export interface CommitmentProposal {

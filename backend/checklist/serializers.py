@@ -19,6 +19,10 @@ def serialize_item(item):
             'id': item.created_by.id,
             'username': item.created_by.username,
         } if item.created_by else None,
+        'reassigned_from': {
+            'id': item.reassigned_from.id,
+            'username': item.reassigned_from.username,
+        } if item.reassigned_from else None,
         'due_at': due_at_str,
         'status': item.status,
         'source_message_id': str(item.source_message_id) if item.source_message_id else None,

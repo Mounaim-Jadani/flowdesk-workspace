@@ -2,8 +2,9 @@
 Serializers for chat functionality.
 """
 from rest_framework import serializers
+from django.db.models import Count
 from django.contrib.auth import get_user_model
-from .models import ChatRoom, RoomParticipant, Message, MessageRead
+from .models import ChatRoom, RoomParticipant, Message, MessageRead, Reaction
 from accounts.serializers import UserMinimalSerializer
 
 User = get_user_model()
@@ -14,13 +15,14 @@ class MessageSerializer(serializers.ModelSerializer):
     sender = UserMinimalSerializer(read_only=True)
     reply_to_preview = serializers.SerializerMethodField()
     is_own_message = serializers.SerializerMethodField()
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = (
             'id', 'room', 'sender', 'content', 'message_type', 'attachment',
             'reply_to', 'reply_to_preview', 'is_edited', 'edited_at',
-            'is_deleted', 'created_at', 'visible_from', 'is_own_message'
+            'is_deleted', 'created_at', 'visible_from', 'is_own_message', 'reactions'
         )
         read_only_fields = ('id', 'sender', 'is_edited', 'edited_at', 'is_deleted', 'created_at')
 
@@ -42,6 +44,19 @@ class MessageSerializer(serializers.ModelSerializer):
         if request and request.user:
             return obj.sender_id == request.user.id
         return False
+
+    def get_reactions(self, obj):
+        return [
+            {'emoji': emoji, 'count': count, 'reacted': reacted}
+            for emoji, count, reacted in self._reaction_summary(obj)
+        ]
+
+    def _reaction_summary(self, obj):
+        request = self.context.get('request')
+        user_id = request.user.id if request and request.user.is_authenticated else None
+        rows = obj.reactions.values('emoji').annotate(count=Count('id'))
+        reacted_emojis = set(obj.reactions.filter(user_id=user_id).values_list('emoji', flat=True)) if user_id else set()
+        return [(row['emoji'], row['count'], row['emoji'] in reacted_emojis) for row in rows]
 
 
 class MessageCreateSerializer(serializers.ModelSerializer):

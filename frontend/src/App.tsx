@@ -6,6 +6,7 @@ import { wsService } from './services/websocket';
 import { useNotificationsStore } from './stores/notificationsStore';
 import { usePresenceSync } from './hooks/usePresenceSync';
 import { useChecklistSync } from './hooks/useChecklistSync';
+import { useKarmaSync } from './hooks/useKarmaSync';
 import { useChatStore } from './stores/chatStore';
 import { routeEvent } from './services/notificationRouter';
 import toast from 'react-hot-toast';
@@ -19,6 +20,7 @@ function App() {
   
   usePresenceSync();
   useChecklistSync();
+  useKarmaSync();
 
   useEffect(() => {
     if (isAuthenticated) {

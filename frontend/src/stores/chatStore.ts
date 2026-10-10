@@ -35,6 +35,7 @@ interface ChatState {
   addMessage: (roomId: string, message: Message) => void;
   handleNewMessageAlert: (message: Message) => void;
   updateMessage: (roomId: string, message: Message) => void;
+  updateMessageReactions: (roomId: string, messageId: string, userId: number, emoji: string, added: boolean) => void;
   deleteMessage: (roomId: string, messageId: string) => void;
 
   // Typing indicators
@@ -260,6 +261,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
         [roomId]: (state.messages[roomId] || []).map((m) =>
           m.id === message.id ? message : m
         ),
+      },
+    }));
+  },
+
+  updateMessageReactions: (roomId, messageId, userId, emoji, added) => {
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [roomId]: (state.messages[roomId] || []).map((message) => {
+          if (message.id !== messageId) return message;
+          const reactions = [...(message.reactions || [])];
+          const index = reactions.findIndex((reaction) => reaction.emoji === emoji);
+          const currentUserId = useAuthStore.getState().user?.id;
+          if (added) {
+            if (index >= 0) {
+              reactions[index] = {
+                ...reactions[index],
+                count: reactions[index].count + 1,
+                reacted: reactions[index].reacted || currentUserId === userId,
+              };
+            } else {
+              reactions.push({ emoji, count: 1, reacted: currentUserId === userId });
+            }
+          } else if (index >= 0) {
+            if (reactions[index].count <= 1) reactions.splice(index, 1);
+            else reactions[index] = { ...reactions[index], count: reactions[index].count - 1, reacted: currentUserId === userId ? false : reactions[index].reacted };
+          }
+          return { ...message, reactions };
+        }),
       },
     }));
   },

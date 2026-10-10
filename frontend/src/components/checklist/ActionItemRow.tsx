@@ -1,13 +1,18 @@
 import { clsx } from 'clsx';
 import { ActionItem, useChecklistStore } from '../../stores/checklistStore';
+import { ChatRoom } from '../../types';
+import { checklistApi } from '../../api/checklist';
+import toast from 'react-hot-toast';
 
 interface ActionItemRowProps {
   roomId: string;
   item: ActionItem;
+  participants?: ChatRoom['participants_info'];
 }
 
-export function ActionItemRow({ roomId, item }: ActionItemRowProps) {
+export function ActionItemRow({ roomId, item, participants = [] }: ActionItemRowProps) {
   const toggleItem = useChecklistStore((s) => s.toggleItem);
+  const upsertItem = useChecklistStore((s) => s.upsertItem);
 
   const isDone = item.status === 'done';
 
@@ -50,6 +55,28 @@ export function ActionItemRow({ roomId, item }: ActionItemRowProps) {
             </div>
           ) : (
             <span className="text-slate-400 italic">Non assigné</span>
+          )}
+          {participants.length > 0 && item.status === 'open' && (
+            <select
+              value={item.assignee?.id || ''}
+              onChange={(event) => {
+                const nextId = Number(event.target.value);
+                if (!nextId || nextId === item.assignee?.id) return;
+                void checklistApi.reassignItem(item.id, nextId)
+                  .then((updated) => {
+                    upsertItem(roomId, updated);
+                    toast.success('Action transférée');
+                  })
+                  .catch(() => toast.error('Impossible de transférer l’action'));
+              }}
+              className="max-w-28 rounded border border-slate-200 bg-transparent px-1 py-0.5 text-[11px] text-slate-500 dark:border-slate-700"
+              aria-label="Transférer l’action"
+            >
+              <option value="">Transférer</option>
+              {participants.map(({ user }) => (
+                <option key={user.id} value={user.id}>{user.username}</option>
+              ))}
+            </select>
           )}
           
           <span className={getDueColor(item.due_at)}>

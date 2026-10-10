@@ -8,13 +8,15 @@ from datetime import datetime
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
+from django.db.models import Count
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from checklist.engine import detect_commitment
 from checklist.deadlines import resolve_deadline
 
-from .models import ChatRoom, Message, RoomParticipant
+from .constants import SUPPORTED_REACTION_EMOJIS
+from .models import ChatRoom, Message, Reaction, RoomParticipant
 from .serializers import MessageSerializer
 
 logger = logging.getLogger(__name__)
@@ -102,6 +104,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'edit': self.handle_edit,
                 'delete': self.handle_delete,
                 'checklist_toggle': self.handle_checklist_toggle,
+                'reaction_add': self.handle_reaction_add,
+                'reaction_remove': self.handle_reaction_remove,
             }
 
             from .constants import MESSAGE_TYPE_TO_CAPABILITY
@@ -175,6 +179,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                             'message': serialized_message,
                         }
                     )
+
+            await self.award_message_karma(message.id)
 
             room_capabilities = await self.get_room_capabilities()
             if 'checklist' in room_capabilities and message.content:
@@ -275,6 +281,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             
         item = await self.toggle_action_item(item_id, done)
         if item:
+            if done:
+                await self.award_completed_action(item.id)
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -286,6 +294,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }
                 }
             )
+
+    async def handle_reaction_add(self, data):
+        payload = await self.change_reaction(data.get('message_id'), data.get('emoji', '👍'), True)
+        if payload:
+            await self.channel_layer.group_send(self.room_group_name, {'type': 'reaction_event', 'payload': payload})
+
+    async def handle_reaction_remove(self, data):
+        payload = await self.change_reaction(data.get('message_id'), data.get('emoji', '👍'), False)
+        if payload:
+            await self.channel_layer.group_send(self.room_group_name, {'type': 'reaction_event', 'payload': payload})
 
     # Channel layer event handlers
 
@@ -359,6 +377,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'payload': event['payload']
         }))
 
+    async def reaction_event(self, event):
+        await self.send(text_data=json.dumps({'type': 'reaction', 'payload': event['payload']}))
+
     async def relay_event(self, event):
         """Relay REST-originated events to room WebSocket clients."""
         payload = event.get('payload', {})
@@ -428,6 +449,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def serialize_message(self, message):
         """Serialize message for JSON response."""
+        reply_to_preview = None
+        if message.reply_to_id and message.reply_to:
+            reply_to_preview = {
+                'id': str(message.reply_to.id),
+                'content': message.reply_to.content[:100],
+                'sender': message.reply_to.sender.username if message.reply_to.sender else 'Unknown',
+            }
+        reactions = []
+        reaction_rows = message.reactions.values('emoji').annotate(count=Count('id'))
+        reacted_emojis = set(message.reactions.filter(user_id=self.user.id).values_list('emoji', flat=True))
+        for row in reaction_rows:
+            reactions.append({
+                'emoji': row['emoji'],
+                'count': row['count'],
+                'reacted': row['emoji'] in reacted_emojis,
+            })
         return {
             'id': str(message.id),
             'room': str(message.room_id),
@@ -441,6 +478,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'content': message.content,
             'message_type': message.message_type,
             'reply_to': str(message.reply_to_id) if message.reply_to_id else None,
+            'reply_to_preview': reply_to_preview,
+            'reactions': reactions,
             'is_edited': message.is_edited,
             'is_deleted': message.is_deleted,
             'created_at': message.created_at.isoformat(),
@@ -530,6 +569,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
             item = ActionItem.objects.get(id=item_id, room_id=self.room_id)
             if self.user != item.assignee and self.user != item.created_by:
                 return None
+
+            if done and item.status == 'done':
+                return item
             
             if done:
                 item.status = 'done'
@@ -542,6 +584,44 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return item
         except ActionItem.DoesNotExist:
             return None
+
+    @database_sync_to_async
+    def award_completed_action(self, item_id):
+        from checklist.karma import award_completed_item
+        return award_completed_item(item_id)
+
+    @database_sync_to_async
+    def award_message_karma(self, message_id):
+        from .karma import award_message_karma
+        return award_message_karma(message_id)
+
+    @database_sync_to_async
+    def change_reaction(self, message_id, emoji, added):
+        emoji = str(emoji or '👍').strip()
+        if emoji not in SUPPORTED_REACTION_EMOJIS:
+            return None
+        try:
+            message = Message.objects.get(id=message_id, room_id=self.room_id)
+        except Message.DoesNotExist:
+            return None
+        if added:
+            reaction, created = Reaction.objects.get_or_create(message=message, user=self.user, emoji=emoji)
+            if not created:
+                return None
+            if emoji == '👍' and message.room.room_type == 'group' and message.sender_id != self.user.id:
+                from karma.signals_bus import emit_karma
+                emit_karma(
+                    'clarification_upvoted', user_id=message.sender_id, room_id=str(message.room_id),
+                    metadata={'room_type': 'group', 'message_id': str(message.id), 'reactor_id': self.user.id},
+                    source_key=f'clarification_upvoted:{message.id}:{self.user.id}',
+                )
+            kind = 'reaction_added'
+        else:
+            deleted, _ = Reaction.objects.filter(message=message, user=self.user, emoji=emoji).delete()
+            if not deleted:
+                return None
+            kind = 'reaction_removed'
+        return {'kind': kind, 'message_id': str(message.id), 'user_id': self.user.id, 'username': self.user.username, 'emoji': emoji}
 
 
 class OnlineStatusConsumer(AsyncWebsocketConsumer):
